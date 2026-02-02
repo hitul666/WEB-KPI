@@ -217,3 +217,4 @@ else:
         if not df_sec.empty:
             plot_kpi_chart(df_sec, section)
             st.markdown("---")
+            
