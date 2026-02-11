@@ -6,6 +6,8 @@ import gdown
 import os
 from datetime import datetime
 import pytz
+import requests
+import json
 
 # ==========================================
 # 1. KONFIGURASI HALAMAN & CSS
@@ -55,6 +57,132 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
+# 1.5 INTEGRASI AI (OLLAMA LOKAL + GROQ CLOUD FALLBACK)
+# ==========================================
+import os
+
+OLLAMA_API = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "qwen2.5-coder:7b"
+
+# Groq API fallback untuk cloud deployment
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "mixtral-8x7b-32768"
+
+def chat_dengan_ai(pertanyaan, context_data=""):
+    """
+    Chat dengan AI - Ollama lokal (development) atau Groq (cloud/fallback)
+    Auto-fallback jika lokal Ollama tidak tersedia
+    """
+    # Coba Ollama lokal dulu (development)
+    if _is_ollama_available():
+        return _chat_ollama(pertanyaan, context_data)
+    
+    # Fallback ke Groq API (cloud)
+    if GROQ_API_KEY:
+        return _chat_groq(pertanyaan, context_data)
+    
+    # Last resort - info message
+    return """⚠️ **AI Service Tidak Tersedia**
+    
+Untuk menggunakan AI Chat:
+1. **Local Development**: Pastikan Ollama running (`ollama serve`)
+2. **Cloud/Production**: Hubungi admin untuk setup Groq API key
+
+Dashboard KPI tetap dapat digunakan tanpa AI features."""
+
+def _is_ollama_available():
+    """Check apakah Ollama API accessible"""
+    try:
+        response = requests.get(f"{OLLAMA_API.replace('/api/generate', '/api/tags')}", timeout=2)
+        return response.status_code == 200
+    except:
+        return False
+
+def _chat_ollama(pertanyaan, context_data=""):
+    """Chat dengan Ollama model lokal"""
+    try:
+        prompt = f"""Anda adalah AI assistant untuk dashboard KPI Pegadaian 2026.
+Gunakan Bahasa Indonesia yang sopan dan profesional.
+Fokus pada analisis data KPI dan rekomendasi.
+
+Konteks Data KPI:
+{context_data}
+
+Pertanyaan: {pertanyaan}
+
+Jawab dengan jelas dan singkat (maksimal 3 paragraf)."""
+        
+        response = requests.post(
+            OLLAMA_API,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": True,
+                "temperature": 0.7,
+                "top_p": 0.9,
+            },
+            timeout=30
+        )
+        
+        response.raise_for_status()
+        
+        full_response = ""
+        for line in response.iter_lines():
+            if line:
+                data = json.loads(line)
+                if "response" in data:
+                    full_response += data["response"]
+                if data.get("done", False):
+                    break
+        
+        return full_response.strip() if full_response else "❌ Tidak ada response dari model"
+    
+    except Exception as e:
+        return f"❌ Ollama Error: {str(e)}"
+
+def _chat_groq(pertanyaan, context_data=""):
+    """Chat dengan Groq API (cloud fallback)"""
+    try:
+        prompt = f"""Anda adalah AI assistant untuk dashboard KPI Pegadaian 2026.
+Gunakan Bahasa Indonesia yang sopan dan profesional.
+Fokus pada analisis data KPI dan rekomendasi.
+
+Konteks Data KPI:
+{context_data}
+
+Pertanyaan: {pertanyaan}
+
+Jawab dengan jelas dan singkat (maksimal 3 paragraf)."""
+        
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(
+            GROQ_API_URL,
+            json={
+                "model": GROQ_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 500,
+                "temperature": 0.7,
+            },
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"].strip()
+        
+        return f"❌ Groq API Error: {response.status_code}"
+    
+    except Exception as e:
+        return f"❌ Groq Error: {str(e)}"
+
+# ==========================================
 # 2. LOGIKA MAPPING SECTION
 # ==========================================
 def assign_section(kode_kpi):
@@ -80,7 +208,7 @@ def assign_section(kode_kpi):
 # ==========================================
 # 3. LOAD DATA (DARI GOOGLE DRIVE)
 # ==========================================
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=300)
 def load_data():
     file_id = '1QzrAMTpCvRjBjjACY9kSLD4_U44zKaFO' 
     url = f'https://drive.google.com/uc?id={file_id}'
@@ -120,11 +248,11 @@ def format_pilihan_login(opsi):
     else: return opsi
 
 if not st.session_state.status_login:
-    st.markdown("<br><br><h1 style='text-align: center;'>🔐 KPI ACCESS 2026</h1>", unsafe_allow_html=True)
+    st.markdown("<br><br><h1 style='text-align: center;'>🔐 AKSES KPI 2026</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         kode_input = st.text_input("Kode Unit", max_chars=5, label_visibility="collapsed", placeholder="10xxx")
-        if st.button("LOGIN SYSTEM", type="primary"):
+        if st.button("LOGIN SISTEM", type="primary"):
             hasil = df[df['KODE_ID'] == kode_input]
             if hasil.empty: st.error("🚫 Kode Unit tidak ditemukan!")
             else:
@@ -134,11 +262,25 @@ if not st.session_state.status_login:
 
     if 'temp_kode' in st.session_state:
         st.info(f"Unit: **{st.session_state.temp_nama}**")
-        pilihan = st.radio("Pilih Jenis Laporan:", st.session_state.temp_kategori_list, horizontal=True, format_func=format_pilihan_login)
-        if st.button("MASUK DASHBOARD"):
-            st.session_state.user_nama, st.session_state.user_kategori = st.session_state.temp_nama, pilihan
-            st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI UNIT'] == pilihan)]['KATEGORI_RANK'].iloc[0]
+        
+        # Cek apakah unit adalah CP/CPS (punya sub-kategori)
+        is_cp_cps_unit = any(k in ['CP', 'CPS', 'REGULAR', 'GADAI'] for k in st.session_state.temp_kategori_list)
+        
+        if is_cp_cps_unit and len(st.session_state.temp_kategori_list) > 1:
+            # CP/CPS: tampilkan pilihan sub-kategori
+            pilihan = st.radio("Pilih Jenis Laporan:", st.session_state.temp_kategori_list, horizontal=True, format_func=format_pilihan_login)
+            if st.button("MASUK DASHBOARD"):
+                st.session_state.user_nama, st.session_state.user_kategori = st.session_state.temp_nama, pilihan
+                st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI UNIT'] == pilihan)]['KATEGORI_RANK'].iloc[0]
+                st.session_state.status_login = True
+                st.rerun()
+        else:
+            # AREA, KANWIL, atau unit dengan 1 kategori: langsung login
+            auto_kategori = st.session_state.temp_kategori_list[0]
+            st.session_state.user_nama, st.session_state.user_kategori = st.session_state.temp_nama, auto_kategori
+            st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI UNIT'] == auto_kategori)]['KATEGORI_RANK'].iloc[0]
             st.session_state.status_login = True
+            st.success(f"Login sebagai {auto_kategori}")
             st.rerun()
 
 # ==========================================
@@ -151,9 +293,56 @@ else:
     df_user = df[(df['NAMA UNIT'] == nama) & (df['KATEGORI UNIT'] == kategori)].copy()
 
     with st.sidebar:
-        st.title("User Profile")
-        if st.button("Logout"):
+        st.title("👤 Profil Pengguna")
+        st.write(f"**Unit:** {nama}")
+        st.write(f"**Tipe:** {kategori}")
+        
+        if st.button("🚪 Logout", width="stretch"):
             st.session_state.status_login = False
+            st.rerun()
+        
+        st.divider()
+        
+        # ===== CHAT AI LOKAL =====
+        st.subheader("🤖 AI Assistant KPI")
+        st.caption("Powered by Ollama (Qwen2.5 Coder 7B)")
+        
+        # Initialize chat history
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display chat history
+        chat_container = st.container(height=300)
+        with chat_container:
+            for message in st.session_state.chat_history:
+                with st.chat_message(message["role"]):
+                    st.write(message["content"])
+        
+        # Input chat
+        user_input = st.chat_input("Tanya tentang KPI...", key="kpi_chat_input")
+        
+        if user_input:
+            # Tambah pertanyaan ke chat history
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            
+            # Buat context dari data KPI user
+            summary_kpi = f"""
+RINGKASAN KPI {nama}:
+- Total Score Bulanan: {df_user['KPI BULANAN'].sum():.2f}
+- Total Score Tahunan: {df_user['KPI TAHUNAN'].sum():.2f}
+- Total ACH Bulanan: {df_user['ACH BULANAN'].sum():.2f}
+- KPI Aktif: {len(df_user[df_user['BOBOT'] > 0])} item
+
+TOP KPI:
+{df_user.nlargest(3, 'KPI TAHUNAN')[['KODE KPI', 'KPI TAHUNAN', 'ACH TAHUNAN']].to_string()}
+            """
+            
+            # Chat dengan AI (Ollama lokal atau Groq cloud)
+            with st.spinner("🤔 AI sedang berpikir..."):
+                response = chat_dengan_ai(user_input, summary_kpi)
+            
+            # Tambah response ke chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.rerun()
 
     badge_color = "#6A1B9A" if kategori == 'AREA' else ("#C62828" if kategori == 'KANWIL' else ("#2962FF" if kategori in ['CP', 'CPS'] else "#00C853"))
@@ -165,9 +354,9 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    periode = st.radio("", ["BULANAN", "TAHUNAN"], horizontal=True, label_visibility="collapsed")
+    periode = st.radio("Periode", ["BULANAN", "TAHUNAN"], horizontal=True, label_visibility="collapsed")
     col_ach, col_score, col_target = ('ACH BULANAN', 'KPI BULANAN', 'TARGET BULANAN') if periode == "BULANAN" else ('ACH TAHUNAN', 'KPI TAHUNAN', 'TARGET TAHUNAN')
-    label_total = f"TOTAL SCORE ({'BLN' if periode == 'BULANAN' else 'THN'})"
+    label_total = f"TOTAL SKOR ({'BLN' if periode == 'BULANAN' else 'THN'})"
 
     # Leaderboard Logic
     base_score = df_user[col_score].sum()
@@ -186,7 +375,7 @@ else:
 
     c1, c2 = st.columns(2)
     with c1: st.markdown(f"<div class='metric-card'><p class='small-text'>{label_total}</p><h1 class='big-text' style='color:#4FC3F7;'>{base_score:.2f}</h1></div>", unsafe_allow_html=True)
-    with c2: st.markdown(f"<div class='metric-card' style='padding:10px; border:1px solid #00E676; display:block;'><p class='small-text' style='margin-bottom:5px; font-weight:bold; color:white;'>RANK #{my_rank}</p>{leaderboard_html}</div>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<div class='metric-card' style='padding:10px; border:1px solid #00E676; display:block;'><p class='small-text' style='margin-bottom:5px; font-weight:bold; color:white;'>PERINGKAT #{my_rank}</p>{leaderboard_html}</div>", unsafe_allow_html=True)
 
     # Plot Function
     def plot_kpi_chart(df_data, title_text):
@@ -197,17 +386,42 @@ else:
         
         fig = go.Figure()
         for i, row in df_plot.iterrows():
-            color = "#66BB6A" if row['ACH_PERSEN'] >= 100 else ("#FFEE58" if row['ACH_PERSEN'] > 90 else "#EF5350")
-            txt_val = f"{row['REALISASI']:,.0f}" if 'npl' not in row['KODE KPI'].lower() else f"{row['REALISASI']:.2f}%"
+            # Logic warna dan text
+            if row['ACH_PERSEN'] >= 100:
+                color = "#66BB6A"  # Hijau
+                text_color = 'black'  # Text hitam
+            elif row['ACH_PERSEN'] > 90:
+                color = "#FFEE58"  # Kuning
+                text_color = 'black'  # Text hitam
+            else:
+                color = "#EF5350"  # Merah
+                text_color = 'white'  # Text putih
+            # Format text dengan bold untuk NPL/LAR
+            if 'npl' in row['KODE KPI'].lower() or 'lar' in row['KODE KPI'].lower():
+                txt_val = f"<b>{row['REALISASI']:.2f}%</b>"
+                font_size = 14
+            else:
+                txt_val = f"{row['REALISASI']:,.0f}"
+                font_size = 12
             
             fig.add_trace(go.Bar(y=[i], x=[100], orientation='h', marker_color='rgba(255,255,255,0.1)', hoverinfo='none', width=0.45))
-            fig.add_trace(go.Bar(y=[i], x=[row['VISUAL_BAR']], orientation='h', text=f"  {txt_val}", textposition='inside' if row['VISUAL_BAR'] > 20 else 'outside', marker_color=color, width=0.45))
+            fig.add_trace(go.Bar(y=[i], x=[row['VISUAL_BAR']], orientation='h', text=f"  {txt_val}", textposition='inside' if row['VISUAL_BAR'] > 20 else 'outside', marker_color=color, width=0.45, textfont=dict(color=text_color, size=font_size, family='Arial Black')))
             fig.add_annotation(x=0, y=i, text=f"<b>{row['KODE KPI']}</b> <span style='color:{color}'>({row['ACH_PERSEN']:.1f}%)</span>", showarrow=False, xanchor="left", yanchor="bottom", yshift=22, font=dict(color="white", size=12))
-            fig.add_trace(go.Scatter(x=[145], y=[i], text=f"T: {row[col_target]:,.0f}", mode="text", textposition="middle right", textfont=dict(color="#AAA", size=13), hoverinfo='none'))
+            # Format target dengan bold untuk NPL/LAR
+            if 'npl' in row['KODE KPI'].lower() or 'lar' in row['KODE KPI'].lower():
+                target_format = f"<b>{row[col_target]:.2f}%</b>"
+                target_font_size = 14
+                target_color = '#FFD700'
+            else:
+                target_format = f"{row[col_target]:,.0f}"
+                target_font_size = 13
+                target_color = "#AAA"
+            
+            fig.add_trace(go.Scatter(x=[145], y=[i], text=f"T: {target_format}", mode="text", textposition="middle right", textfont=dict(color=target_color, size=target_font_size, family='Arial Black'), hoverinfo='none'))
             fig.add_shape(type="line", x0=100, y0=i-0.4, x1=100, y1=i+0.4, line=dict(color="white", width=1, dash="dot"))
 
         fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False))
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': True})
+        st.plotly_chart(fig, width="stretch", config={'displayModeBar': False, 'staticPlot': True})
 
     ordered_sections = ["1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", "7. Gold Ecosystem", "8. Pegadaian Digital (Tring!)", "9. Sinergi Holding UMi", "10. KPI Stretch Goal (Cicil Emas)"]
     df_active = df_user[(df_user['BOBOT'] > 0) | (df_user['KODE KPI'].str.contains('CICIL EMAS', case=False))].copy()
@@ -217,4 +431,3 @@ else:
         if not df_sec.empty:
             plot_kpi_chart(df_sec, section)
             st.markdown("---")
-            
