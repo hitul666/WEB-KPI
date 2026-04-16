@@ -247,28 +247,24 @@ else:
         df_plot = df_data.sort_values(by='KODE KPI', ascending=False).reset_index(drop=True)
         fig = go.Figure()
         
-        # Penentuan format khusus (2 desimal)
-        is_percent_format = "5. Kualitas Kredit" in title_text or "Efisiensi (CIR)" in title_text or "Sinergi Holding UMi" in title_text
-        
         for i, row in df_plot.iterrows():
             ach_p = row[col_ach] * 100
             color = "#66BB6A" if ach_p >= 100 else ("#FFEE58" if ach_p > 90 else "#EF5350")
             
-            # Format Angka Realisasi & Target
-            if is_percent_format:
+            # Logika Format: Khusus X. DISBURS BRI, CIR, dan Kualitas Kredit pakai % 2 desimal
+            # Y dan Z tetap format ribuan biasa
+            is_percent = "Kualitas Kredit" in title_text or "Efisiensi (CIR)" in title_text or row['KODE KPI'] == "X. DISBURS BRI"
+            
+            if is_percent:
                 real_txt = f"{row['REALISASI']:.2f}%"
                 tgt_txt = f"T: {row[col_target]:.2f}%"
             else:
                 real_txt = f"{row['REALISASI']:,.0f}"
                 tgt_txt = f"T: {row[col_target]:,.0f}"
                 
-            # Background Bar
             fig.add_trace(go.Bar(y=[i], x=[100], orientation='h', marker_color='rgba(255,255,255,0.1)', hoverinfo='none', width=0.45))
-            # Progress Bar
             fig.add_trace(go.Bar(y=[i], x=[min(ach_p, 120)], orientation='h', text=f" {real_txt}", textposition='inside' if ach_p > 20 else 'outside', marker_color=color, width=0.45, textfont=dict(color='black' if ach_p > 20 else 'white', size=11, family='Arial Black')))
-            # Judul KPI
             fig.add_annotation(x=0, y=i, text=f"<b>{row['KODE KPI']}</b> ({ach_p:.1f}%)", showarrow=False, xanchor="left", yanchor="bottom", yshift=22, font=dict(color="white", size=12))
-            # Target (Sisi Kanan)
             fig.add_trace(go.Scatter(x=[145], y=[i], text=tgt_txt, mode="text", textposition="middle right", textfont=dict(color="#AAA", size=12, family='Arial Black'), hoverinfo='none'))
 
         fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False))
