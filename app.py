@@ -62,109 +62,36 @@ st.markdown("""
 OLLAMA_API = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "qwen2.5-coder:7b"
 
-# Groq API fallback untuk cloud deployment
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "mixtral-8x7b-32768"
 
 def chat_dengan_ai(pertanyaan, context_data=""):
-    """
-    Chat dengan AI - Ollama lokal (development) atau Groq (cloud/fallback)
-    Auto-fallback jika lokal Ollama tidak tersedia
-    """
     if _is_ollama_available():
         return _chat_ollama(pertanyaan, context_data)
-    
     if GROQ_API_KEY:
         return _chat_groq(pertanyaan, context_data)
-    
-    return """⚠️ **AI Service Tidak Tersedia**
-    
-Untuk menggunakan AI Chat:
-1. **Local Development**: Pastikan Ollama running (`ollama serve`)
-2. **Cloud/Production**: Hubungi admin untuk setup Groq API key
-
-Dashboard KPI tetap dapat digunakan tanpa AI features."""
+    return "⚠️ **AI Service Tidak Tersedia**"
 
 def _is_ollama_available():
     try:
         response = requests.get(f"{OLLAMA_API.replace('/api/generate', '/api/tags')}", timeout=2)
         return response.status_code == 200
-    except:
-        return False
+    except: return False
 
 def _chat_ollama(pertanyaan, context_data=""):
     try:
-        prompt = f"""Anda adalah AI assistant untuk dashboard KPI Pegadaian 2026.
-Gunakan Bahasa Indonesia yang sopan dan profesional.
-Fokus pada analisis data KPI dan rekomendasi.
-
-Konteks Data KPI:
-{context_data}
-
-Pertanyaan: {pertanyaan}
-
-Jawab dengan jelas dan singkat (maksimal 3 paragraf)."""
-        
-        response = requests.post(
-            OLLAMA_API,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": True,
-                "temperature": 0.7,
-                "top_p": 0.9,
-            },
-            timeout=30
-        )
-        response.raise_for_status()
-        
-        full_response = ""
-        for line in response.iter_lines():
-            if line:
-                data = json.loads(line)
-                if "response" in data:
-                    full_response += data["response"]
-                if data.get("done", False):
-                    break
-        return full_response.strip() if full_response else "❌ Tidak ada response dari model"
-    except Exception as e:
-        return f"❌ Ollama Error: {str(e)}"
+        prompt = f"Konteks Data KPI:\n{context_data}\n\nPertanyaan: {pertanyaan}"
+        response = requests.post(OLLAMA_API, json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+        return response.json().get("response", "❌ Error response")
+    except Exception as e: return f"❌ Ollama Error: {str(e)}"
 
 def _chat_groq(pertanyaan, context_data=""):
     try:
-        prompt = f"""Anda adalah AI assistant untuk dashboard KPI Pegadaian 2026.
-Gunakan Bahasa Indonesia yang sopan dan profesional.
-Fokus pada analisis data KPI dan rekomendasi.
-
-Konteks Data KPI:
-{context_data}
-
-Pertanyaan: {pertanyaan}
-
-Jawab dengan jelas dan singkat (maksimal 3 paragraf)."""
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        response = requests.post(
-            GROQ_API_URL,
-            json={
-                "model": GROQ_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 500,
-                "temperature": 0.7,
-            },
-            headers=headers,
-            timeout=30
-        )
-        if response.status_code == 200:
-            data = response.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"].strip()
-        return f"❌ Groq API Error: {response.status_code}"
-    except Exception as e:
-        return f"❌ Groq Error: {str(e)}"
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        response = requests.post(GROQ_API_URL, json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": f"{context_data}\n\n{pertanyaan}"}]}, headers=headers, timeout=30)
+        return response.json()['choices'][0]['message']['content']
+    except Exception as e: return f"❌ Groq Error: {str(e)}"
 
 # ==========================================
 # 2. LOGIKA MAPPING SECTION
@@ -190,7 +117,7 @@ def assign_section(kode_kpi):
     return mapping.get(str(kode_kpi).strip(), "Lainnya")
 
 # ==========================================
-# 3. LOAD DATA (DARI GOOGLE DRIVE)
+# 3. LOAD DATA
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -203,8 +130,7 @@ def load_data():
         mod_time = os.path.getmtime(output)
         tz = pytz.timezone('Asia/Jakarta')
         tgl_str = datetime.fromtimestamp(mod_time, tz).strftime("%d %b %Y, %H:%M")
-    except Exception as e:
-        return None, str(e)
+    except Exception as e: return None, str(e)
     
     df['KODE_ID'] = df['NAMA UNIT'].astype(str).str.split(':').str[0]
     cols_num = ['ACH BULANAN', 'ACH TAHUNAN', 'KPI BULANAN', 'KPI TAHUNAN', 'BOBOT', 'TARGET BULANAN', 'TARGET TAHUNAN', 'REALISASI']
@@ -268,8 +194,7 @@ else:
 
     with st.sidebar:
         st.title("👤 Profil Pengguna")
-        st.write(f"**Unit:** {nama}")
-        st.write(f"**Tipe:** {kategori}")
+        st.write(f"**Unit:** {nama}"); st.write(f"**Tipe:** {kategori}")
         if st.button("🚪 Logout", width="stretch"):
             st.session_state.status_login = False
             st.rerun()
@@ -278,15 +203,13 @@ else:
         if 'chat_history' not in st.session_state: st.session_state.chat_history = []
         chat_container = st.container(height=300)
         with chat_container:
-            for message in st.session_state.chat_history:
-                with st.chat_message(message["role"]):
-                    st.write(message["content"])
-        user_input = st.chat_input("Tanya tentang KPI...", key="kpi_chat_input")
+            for m in st.session_state.chat_history:
+                with st.chat_message(m["role"]): st.write(m["content"])
+        user_input = st.chat_input("Tanya tentang KPI...")
         if user_input:
             st.session_state.chat_history.append({"role": "user", "content": user_input})
             summary_kpi = f"RINGKASAN KPI {nama}:\n- Score Tahunan: {df_user['KPI TAHUNAN'].sum():.2f}"
-            with st.spinner("🤔 AI sedang berpikir..."):
-                response = chat_dengan_ai(user_input, summary_kpi)
+            response = chat_dengan_ai(user_input, summary_kpi)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.rerun()
 
@@ -302,7 +225,6 @@ else:
     periode = st.radio("Periode", ["BULANAN", "TAHUNAN"], horizontal=True, label_visibility="collapsed")
     col_ach, col_score, col_target = ('ACH BULANAN', 'KPI BULANAN', 'TARGET BULANAN') if periode == "BULANAN" else ('ACH TAHUNAN', 'KPI TAHUNAN', 'TARGET TAHUNAN')
     
-    # Leaderboard Logic
     rank_df = df[df['KATEGORI_RANK'] == kat_rank].groupby('NAMA UNIT')[col_score].sum().sort_values(ascending=False).reset_index()
     try: my_rank = rank_df[rank_df['NAMA UNIT'] == nama].index[0] + 1
     except: my_rank = "-"
@@ -314,7 +236,7 @@ else:
         leaderboard_html += f"<div class='leaderboard-row' {rid} style='background-color:{bg}; color:{txt}; font-weight:{'bold' if is_me else 'normal'};'><span style='width:25px;'>#{idx+1}</span><span style='flex-grow:1; margin-left:5px;'>{row['NAMA UNIT'].split(':')[-1][:18]}</span><span style='text-align:right;'>{row[col_score]:.2f}</span></div>"
     leaderboard_html += "</div>"
     
-    components.html(f"<script>setTimeout(() => {{ var target = window.parent.document.getElementById('my-rank'); if (target) target.scrollIntoView({{behavior: 'smooth', block: 'center'}}); }}, 1000);</script>", height=0)
+    components.html(f"<script>setTimeout(() => {{ var t = window.parent.document.getElementById('my-rank'); if (t) t.scrollIntoView({{behavior: 'smooth', block: 'center'}}); }}, 1000);</script>", height=0)
 
     c1, c2 = st.columns(2)
     with c1: st.markdown(f"<div class='metric-card'><p class='small-text'>TOTAL SKOR</p><h1 class='big-text' style='color:#4FC3F7;'>{df_user[col_score].sum():.2f}</h1></div>", unsafe_allow_html=True)
@@ -324,13 +246,32 @@ else:
         st.subheader(title_text)
         df_plot = df_data.sort_values(by='KODE KPI', ascending=False).reset_index(drop=True)
         fig = go.Figure()
+        
+        # Penentuan format khusus (2 desimal)
+        is_percent_format = "5. Kualitas Kredit" in title_text or "Efisiensi (CIR)" in title_text or "Sinergi Holding UMi" in title_text
+        
         for i, row in df_plot.iterrows():
             ach_p = row[col_ach] * 100
             color = "#66BB6A" if ach_p >= 100 else ("#FFEE58" if ach_p > 90 else "#EF5350")
+            
+            # Format Angka Realisasi & Target
+            if is_percent_format:
+                real_txt = f"{row['REALISASI']:.2f}%"
+                tgt_txt = f"T: {row[col_target]:.2f}%"
+            else:
+                real_txt = f"{row['REALISASI']:,.0f}"
+                tgt_txt = f"T: {row[col_target]:,.0f}"
+                
+            # Background Bar
             fig.add_trace(go.Bar(y=[i], x=[100], orientation='h', marker_color='rgba(255,255,255,0.1)', hoverinfo='none', width=0.45))
-            fig.add_trace(go.Bar(y=[i], x=[min(ach_p, 120)], orientation='h', text=f" {row['REALISASI']:,.0f}", marker_color=color, width=0.45))
+            # Progress Bar
+            fig.add_trace(go.Bar(y=[i], x=[min(ach_p, 120)], orientation='h', text=f" {real_txt}", textposition='inside' if ach_p > 20 else 'outside', marker_color=color, width=0.45, textfont=dict(color='black' if ach_p > 20 else 'white', size=11, family='Arial Black')))
+            # Judul KPI
             fig.add_annotation(x=0, y=i, text=f"<b>{row['KODE KPI']}</b> ({ach_p:.1f}%)", showarrow=False, xanchor="left", yanchor="bottom", yshift=22, font=dict(color="white", size=12))
-        fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False), yaxis=dict(showticklabels=False))
+            # Target (Sisi Kanan)
+            fig.add_trace(go.Scatter(x=[145], y=[i], text=tgt_txt, mode="text", textposition="middle right", textfont=dict(color="#AAA", size=12, family='Arial Black'), hoverinfo='none'))
+
+        fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False))
         st.plotly_chart(fig, width="stretch", config={'staticPlot': True})
 
     ordered_sections = ["1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", "7. Gold Ecosystem", "8. Pegadaian Digital (Tring!)", "9. Sinergi Holding UMi", "10. KPI Stretch Goal (Cicil Emas)"]
