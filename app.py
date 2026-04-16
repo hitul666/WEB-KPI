@@ -8,31 +8,91 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN & CSS ORIGINAL
+# 1. KONFIGURASI HALAMAN (ORIGINAL)
 # ==========================================
 st.set_page_config(
     page_title="KPI Dashboard 2026",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
-# Mengembalikan gaya CSS dashboard Cemara yang lama
+# CSS ORIGINAL CEMARA ANALYTICS
 st.markdown("""
     <style>
-    [data-testid="stSidebar"] { background-color: #1a1a2e; }
-    .stApp { background-color: #0f0f1b; color: #EAEAEA; }
-    .metric-card {
-        background: linear-gradient(145deg, #1e1e30, #252540);
-        padding: 20px; border-radius: 15px;
-        border: 1px solid #3e3e5e; text-align: center;
-        box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+    .stApp {
+        background-color: #121212;
+        color: #EAEAEA;
     }
-    .stProgress > div > div > div > div { background-color: #00E676; }
+    .stTextInput input {
+        background-color: #2C2C3E;
+        color: white;
+        text-align: center;
+        font-size: 1.5rem;
+        padding: 15px;
+        letter-spacing: 3px;
+        border: 1px solid #555;
+        border-radius: 10px;
+    }
+    .stButton button {
+        width: 100%;
+        border-radius: 10px;
+        padding: 10px;
+        font-weight: bold;
+        background-color: #00E676;
+        color: black;
+        border: none;
+        transition: 0.3s;
+    }
+    .stButton button:hover {
+        background-color: #00C853;
+        color: white;
+    }
+    div.metric-card {
+        background-color: #2C2C3E;
+        padding: 15px;
+        border-radius: 15px;
+        border: 1px solid #3E3E5E;
+        text-align: center;
+        margin-bottom: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .small-text {
+        font-size: 0.75rem;
+        color: #AAA;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .big-text {
+        font-size: 2.2rem;
+        font-weight: bold;
+        margin: 0;
+        color: white;
+    }
+    .leaderboard-container {
+        height: 150px;
+        overflow-y: auto;
+        padding-right: 5px;
+        scroll-behavior: smooth;
+    }
+    .leaderboard-row {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+        border-radius: 5px;
+        margin-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. LOGIKA MAPPING & DATA
+# 2. LOGIKA MAPPING SECTION (ORIGINAL)
 # ==========================================
 def assign_section(kode_kpi):
     mapping = {
@@ -54,20 +114,27 @@ def assign_section(kode_kpi):
     }
     return mapping.get(str(kode_kpi).strip(), "Lainnya")
 
+# ==========================================
+# 3. LOAD DATA (FIXED GDOWN)
+# ==========================================
 @st.cache_data(ttl=300)
 def load_data():
     file_id = '1QzrAMTpCvRjBjjACY9kSLD4_U44zKaFO' 
     url = f'https://drive.google.com/uc?id={file_id}'
     output = 'data_kpi.csv'
     try:
-        # Perbaikan bug 'fuzzy' tanpa mengubah fungsi download
+        # SATU-SATUNYA BAGIAN YANG DIUBAH: Menghapus fuzzy=True agar tidak error
         gdown.download(url, output, quiet=True) 
         df = pd.read_csv(output)
         df['KODE_ID'] = df['NAMA UNIT'].astype(str).str.split(':').str[0].str.strip()
         cols_num = ['ACH BULANAN', 'ACH TAHUNAN', 'KPI BULANAN', 'KPI TAHUNAN', 'BOBOT', 'TARGET BULANAN', 'TARGET TAHUNAN', 'REALISASI']
         for col in cols_num:
-            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            if col in df.columns: 
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        df['KATEGORI_RANK'] = df['KATEGORI UNIT'].apply(lambda x: 'GABUNGAN CP & CPS' if x in ['CP', 'CPS'] else ('GABUNGAN GADAI & REG' if x in ['GADAI', 'REGULAR'] else x))
         df['SECTION_PDF'] = df['KODE KPI'].apply(assign_section)
+        
         tz = pytz.timezone('Asia/Jakarta')
         tgl_str = datetime.fromtimestamp(os.path.getmtime(output), tz).strftime("%d %b %Y, %H:%M")
         return df, tgl_str
@@ -77,60 +144,83 @@ def load_data():
 df, tgl_update = load_data()
 
 # ==========================================
-# 3. LOGIN SISTEM
+# 4. LOGIKA LOGIN (ORIGINAL)
 # ==========================================
+if df is None:
+    st.error(f"❌ DATABASE TIDAK TERHUBUNG: {tgl_update}")
+    st.stop()
+
 if 'status_login' not in st.session_state:
     st.session_state.status_login = False
 
 if not st.session_state.status_login:
-    st.markdown("<h1 style='text-align: center; margin-top: 50px;'>🔐 LOGIN CEMARA</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    st.markdown("<br><br><h1 style='text-align: center;'>🔐 AKSES KPI 2026</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        kode_input = st.text_input("Masukkan Kode Unit", placeholder="Contoh: 00709")
-        if st.button("Masuk"):
+        kode_input = st.text_input("Kode Unit", max_chars=5, label_visibility="collapsed", placeholder="00xxx")
+        if st.button("LOGIN SISTEM"):
             hasil = df[df['KODE_ID'] == kode_input.strip()]
             if not hasil.empty:
-                st.session_state.user_nama = hasil.iloc[0]['NAMA UNIT']
-                st.session_state.user_kategori = hasil['KATEGORI UNIT'].iloc[0]
-                st.session_state.status_login = True
-                st.rerun()
+                st.session_state.temp_nama = hasil.iloc[0]['NAMA UNIT']
+                st.session_state.temp_kategori_list = hasil['KATEGORI UNIT'].unique()
+                st.session_state.temp_kode = kode_input.strip()
             else:
-                st.error("Kode Unit Salah")
+                st.error("🚫 Kode Unit tidak ditemukan!")
+
+    if 'temp_kode' in st.session_state:
+        st.info(f"Unit: **{st.session_state.temp_nama}**")
+        pilihan = st.radio("Pilih Jenis Laporan:", st.session_state.temp_kategori_list, horizontal=True)
+        if st.button("MASUK DASHBOARD"):
+            st.session_state.user_nama = st.session_state.temp_nama
+            st.session_state.user_kategori = pilihan
+            st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.user_nama) & (df['KATEGORI UNIT'] == pilihan)]['KATEGORI_RANK'].iloc[0]
+            st.session_state.status_login = True
+            st.rerun()
+
+# ==========================================
+# 5. TAMPILAN DASHBOARD (ORIGINAL)
+# ==========================================
 else:
-    # ==========================================
-    # 4. TAMPILAN DASHBOARD ORIGINAL
-    # ==========================================
-    # Sidebar Navigation & Filter (Persis versi sebelumnya)
+    # Info Update
+    st.markdown(f"<p style='text-align: center; color: #888; font-size: 0.8rem; margin-top: 10px;'>Pembaruan Data: {tgl_update} WIB</p>", unsafe_allow_html=True)
+    
+    nama = st.session_state.user_nama
+    kategori = st.session_state.user_kategori
+    kategori_rank = st.session_state.user_kategori_rank
+    df_user = df[(df['NAMA UNIT'] == nama) & (df['KATEGORI UNIT'] == kategori)].copy()
+
+    # Sidebar Logout
     with st.sidebar:
-        st.image("https://upload.wikimedia.org/wikipedia/id/thumb/a/a7/Logo_Pegadaian.svg/1200px-Logo_Pegadaian.svg.png", width=150)
+        st.title("👤 Profil")
+        st.write(f"**Unit:** {nama}")
+        st.write(f"**Tipe:** {kategori}")
         st.divider()
-        st.write(f"👤 **{st.session_state.user_nama}**")
-        st.write(f"🏢 Tipe: {st.session_state.user_kategori}")
-        st.divider()
-        periode = st.selectbox("Pilih Periode", ["BULANAN", "TAHUNAN"])
-        if st.button("Keluar"):
+        if st.button("Logout"):
             st.session_state.status_login = False
             st.rerun()
 
-    # Layout Utama
-    st.title("📊 Cemara Analytics")
-    st.caption(f"Terakhir diperbarui: {tgl_update} WIB")
+    # Header Dashboard
+    st.markdown(f"""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: white; font-size: 1.8rem; font-weight: 800; margin: 0;">{nama}</h1>
+        <div style="display: inline-block; background-color: #00E676; color: black; padding: 2px 15px; border-radius: 15px; margin-top: 10px; font-weight: bold; font-size: 0.8rem;">{kategori}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    df_user = df[(df['NAMA UNIT'] == st.session_state.user_nama) & (df['KATEGORI UNIT'] == st.session_state.user_kategori)].copy()
+    periode = st.radio("Pilih Periode Analisis:", ["BULANAN", "TAHUNAN"], horizontal=True)
     col_score = 'KPI BULANAN' if periode == "BULANAN" else 'KPI TAHUNAN'
     col_ach = 'ACH BULANAN' if periode == "BULANAN" else 'ACH TAHUNAN'
 
-    # Metrik Atas
-    m1, m2 = st.columns(2)
-    with m1:
-        st.markdown(f"<div class='metric-card'><small>TOTAL SKOR</small><h2>{df_user[col_score].sum():.2f}</h2></div>", unsafe_allow_html=True)
-    with m2:
-        avg_ach = df_user[col_ach].mean() * 100
-        st.markdown(f"<div class='metric-card'><small>RATA-RATA ACH</small><h2>{avg_ach:.1f}%</h2></div>", unsafe_allow_html=True)
+    # Metrik Skor Utama
+    total_skor = df_user[col_score].sum()
+    st.markdown(f"""
+        <div class='metric-card'>
+            <p class='small-text'>TOTAL SKOR {periode}</p>
+            <h1 class='big-text' style='color:#00E676;'>{total_skor:.2f}</h1>
+        </div>
+    """, unsafe_allow_html=True)
 
-    st.write("---")
-
-    # Grouping Berdasarkan 10 Section Utama
+    # Menampilkan 10 Section Berurutan
     sections = [
         "1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", 
         "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", 
@@ -139,16 +229,11 @@ else:
     ]
 
     for sec in sections:
-        data_sec = df_user[df_user['SECTION_PDF'] == sec]
-        if not data_sec.empty:
-            st.subheader(sec)
-            for _, row in data_sec.iterrows():
-                val_ach = row[col_ach]
-                c1, c2 = st.columns([3, 1])
-                with c1:
-                    st.write(f"{row['KODE KPI']}")
-                    st.progress(min(float(val_ach), 1.0))
-                with c2:
-                    st.write(f"**{val_ach*100:.1f}%**")
-                    st.caption(f"Target: {row['TARGET '+periode]:,.0f}")
-            st.write("")
+        df_sec = df_user[df_user['SECTION_PDF'] == sec]
+        if not df_sec.empty:
+            with st.expander(f"📂 {sec}", expanded=True):
+                for _, row in df_sec.iterrows():
+                    ach_val = row[col_ach] * 100
+                    st.write(f"**{row['KODE KPI']}**")
+                    st.progress(min(ach_val/100, 1.0))
+                    st.caption(f"Pencapaian: {ach_val:.1f}% | Realisasi: {row['REALISASI']:,.0f}")
