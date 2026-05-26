@@ -120,7 +120,7 @@ def assign_section(kode_kpi):
     return mapping.get(str(kode_kpi).strip(), "Lainnya")
 
 # ==========================================
-# 3. LOAD DATA (DENGAN AUTO-DETEKSI SEPARATOR & DEBUGGING)
+# 3. LOAD DATA (DISESUAIKAN DENGAN HEADER BARU)
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -133,7 +133,7 @@ def load_data():
         # 1. Coba baca secara normal (koma)
         df = pd.read_csv(output)
         
-        # 2. Antisipasi jika separatornya menggunakan titik koma (;)
+        # 2. Antisipasi jika separatornya menggunakan titik koma (Anomali Excel/Windows)
         if 'NAMA UNIT' not in [c.strip() for c in df.columns] and len(df.columns) <= 1:
             df = pd.read_csv(output, sep=';')
             
@@ -146,25 +146,33 @@ def load_data():
     except Exception as e: 
         return None, str(e)
     
-    # 4. Kontrol Darurat Khusus Layar Streamlit Cloud jika kolom hilang
-    if 'KATEGORI UNIT' not in df.columns:
-        st.error("❌ **Error: Kolom 'KATEGORI UNIT' tidak ditemukan di file CSV!**")
-        st.write("Daftar kolom yang terbaca saat ini:")
+    # 4. KONTROL DARURAT: Memastikan kolom-kolom vital yang baru ada semua
+    kolom_vital = ['KODE KPI', 'NAMA UNIT', 'KATEGORI', 'BOBOT', 'TARGET BULANAN', 'TARGET TAHUNAN', 'REALISASI', 'ACH BULANAN', 'ACH TAHUNAN']
+    kolom_hilang = [col for col in kolom_vital if col not in df.columns]
+    
+    if kolom_hilang:
+        st.error(f"❌ **Error: Kolom wajib {kolom_hilang} tidak ditemukan di file CSV!**")
+        st.write("Daftar kolom yang terdeteksi di file kamu saat ini:")
         st.code(list(df.columns))
-        st.write("Silakan cek file induk di Google Drive Anda.")
         st.stop()
         
+    # 5. Ambil hanya kolom yang penting untuk performa aplikasi
+    kolom_dipakai = kolom_vital + ['KPI BULANAN', 'KPI TAHUNAN']
+    # Hanya filter kolom jika KPI BULANAN & TAHUNAN tersedia, jika tidak ada tetap aman
+    kolom_ada = [col for col in kolom_dipakai if col in df.columns]
+    df = df[kolom_ada].copy()
+        
     df['KODE_ID'] = df['NAMA UNIT'].astype(str).str.split(':').str[0]
+    
+    # Isi nilai kosong (NaN) dengan angka 0 agar tidak merusak grafik
     cols_num = ['ACH BULANAN', 'ACH TAHUNAN', 'KPI BULANAN', 'KPI TAHUNAN', 'BOBOT', 'TARGET BULANAN', 'TARGET TAHUNAN', 'REALISASI']
     for col in cols_num:
-        if col in df.columns: df[col] = df[col].fillna(0)
+        if col in df.columns: 
+            df[col] = df[col].fillna(0)
     
-    df['KATEGORI_RANK'] = df['KATEGORI UNIT'].apply(lambda x: 'GABUNGAN CP & CPS' if x in ['CP', 'CPS'] else ('GABUNGAN GADAI & REG' if x in ['GADAI', 'REGULAR'] else x))
+    df['KATEGORI_RANK'] = df['KATEGORI'].apply(lambda x: 'GABUNGAN CP & CPS' if x in ['CP', 'CPS'] else ('GABUNGAN GADAI & REG' if x in ['GADAI', 'REGULAR'] else x))
     df['SECTION_PDF'] = df['KODE KPI'].apply(assign_section)
     return df, tgl_str
-
-df, tgl_update = load_data()
-
 # ==========================================
 # 4. SESSION & LOGIN
 # ==========================================
