@@ -158,7 +158,6 @@ def load_data():
         
     # 5. Ambil hanya kolom yang penting untuk performa aplikasi
     kolom_dipakai = kolom_vital + ['KPI BULANAN', 'KPI TAHUNAN']
-    # Hanya filter kolom jika KPI BULANAN & TAHUNAN tersedia, jika tidak ada tetap aman
     kolom_ada = [col for col in kolom_dipakai if col in df.columns]
     df = df[kolom_ada].copy()
         
@@ -173,8 +172,11 @@ def load_data():
     df['KATEGORI_RANK'] = df['KATEGORI'].apply(lambda x: 'GABUNGAN CP & CPS' if x in ['CP', 'CPS'] else ('GABUNGAN GADAI & REG' if x in ['GADAI', 'REGULAR'] else x))
     df['SECTION_PDF'] = df['KODE KPI'].apply(assign_section)
     return df, tgl_str
+
+df, tgl_update = load_data()
+
 # ==========================================
-# 4. SESSION & LOGIN
+# 4. SESSION & LOGIN (SUDAH DISINKRONKAN KE 'KATEGORI')
 # ==========================================
 if 'status_login' not in st.session_state: 
     st.session_state.status_login = False
@@ -196,7 +198,7 @@ if not st.session_state.status_login:
                 st.error("🚫 Kode Unit tidak ditemukan!")
             else:
                 st.session_state.temp_kode, st.session_state.temp_nama = kode_input, hasil.iloc[0]['NAMA UNIT']
-                st.session_state.temp_kategori_list = hasil['KATEGORI UNIT'].unique()
+                st.session_state.temp_kategori_list = hasil['KATEGORI'].unique()
                 st.rerun()
 
     if 'temp_kode' in st.session_state:
@@ -206,23 +208,23 @@ if not st.session_state.status_login:
             pilihan = st.radio("Pilih Jenis Laporan:", st.session_state.temp_kategori_list, horizontal=True, format_func=format_pilihan_login)
             if st.button("MASUK DASHBOARD"):
                 st.session_state.user_nama, st.session_state.user_kategori = st.session_state.temp_nama, pilihan
-                st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI UNIT'] == pilihan)]['KATEGORI_RANK'].iloc[0]
+                st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI'] == pilihan)]['KATEGORI_RANK'].iloc[0]
                 st.session_state.status_login = True
                 st.rerun()
         else:
             auto_kategori = st.session_state.temp_kategori_list[0]
             st.session_state.user_nama, st.session_state.user_kategori = st.session_state.temp_nama, auto_kategori
-            st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI UNIT'] == auto_kategori)]['KATEGORI_RANK'].iloc[0]
+            st.session_state.user_kategori_rank = df[(df['NAMA UNIT'] == st.session_state.temp_nama) & (df['KATEGORI'] == auto_kategori)]['KATEGORI_RANK'].iloc[0]
             st.session_state.status_login = True
             st.rerun()
 
 # ==========================================
-# 5. DASHBOARD UTAMA
+# 5. DASHBOARD UTAMA (SUDAH DISINKRONKAN KE 'KATEGORI')
 # ==========================================
 else:
     st.markdown(f"<p style='text-align: center; color: #888; font-size: 0.8rem; margin-bottom: -10px;'>Terakhir diperbarui: {tgl_update} WIB</p>", unsafe_allow_html=True)
     nama, kategori, kat_rank = st.session_state.user_nama, st.session_state.user_kategori, st.session_state.user_kategori_rank
-    df_user = df[(df['NAMA UNIT'] == nama) & (df['KATEGORI UNIT'] == kategori)].copy()
+    df_user = df[(df['NAMA UNIT'] == nama) & (df['KATEGORI'] == kategori)].copy()
 
     with st.sidebar:
         st.title("👤 Profil Pengguna")
@@ -243,7 +245,7 @@ else:
         user_input = st.chat_input("Tanya tentang KPI...")
         if user_input:
             st.session_state.chat_history.append({"role": "user", "content": user_input})
-            summary_kpi = f"RINGKASAN KPI {nama}:\n- Score Tahunan: {df_user['KPI TAHUNAN'].sum():.2f}"
+            summary_kpi = f"RINGKASAN KPI {nama}:\n- Score Tananan: {df_user['KPI TAHUNAN'].sum():.2f}"
             response = chat_dengan_ai(user_input, summary_kpi)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.rerun()
@@ -290,7 +292,6 @@ else:
             ach_p = row[col_ach] * 100
             color = "#66BB6A" if ach_p >= 100 else ("#FFEE58" if ach_p > 90 else "#EF5350")
             
-            # PROTEKSI FORMAT PERSEN KETAT (Agar OSL Sinergi Y & Z tidak ikut menjadi persen raksasa)
             kode_kpi_str = str(row['KODE KPI']).strip()
             is_percent = (
                 "Kualitas Kredit" in title_text or 
