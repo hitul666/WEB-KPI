@@ -97,30 +97,48 @@ def _chat_groq(pertanyaan, context_data=""):
         return f"❌ Groq Error: {str(e)}"
 
 # ==========================================
-# 2. LOGIKA MAPPING SECTION
+# 2. LOGIKA MAPPING SECTION (ROBUST KEYWORD MATCHING)
 # ==========================================
 def assign_section(kode_kpi):
-    mapping = {
-        'A.AVG GADAI': "1. Outstanding Loan", 'B.AVG NON GADAI': "1. Outstanding Loan",
-        'C.AVG EMAS': "1. Outstanding Loan", 'D.0SL GROSS': "1. Outstanding Loan",
-        'E.LABA': "2. Laba Usaha", 'F. CIR': "3. Efisiensi (CIR)",
-        'G. NSBH BARU': "4. Nasabah", 'H. NSBH BARU AGEN': "4. Nasabah",
-        'I. NSBH TAHUNAN': "4. Nasabah", 'J. NSBH TE': "4. Nasabah",
-        'K. NPL GADAI': "5. Kualitas Kredit", 'L. NPL NON GADAI': "5. Kualitas Kredit",
-        'M. NPL EMAS': "5. Kualitas Kredit", 'N. LAR GADAI': "5. Kualitas Kredit",
-        'O. LAR NON GADAI': "5. Kualitas Kredit", 'P. LAR EMAS': "5. Kualitas Kredit",
-        'Q. BRAND AWARENESS': "6. Revamp Brand",
-        'R.DEPOSITO EMAS': "7. Gold Ecosystem", 'S.TABUNGAN EMAS': "7. Gold Ecosystem", 'T. G24': "7. Gold Ecosystem",
-        'U. NASABAH TRING': "8. Pegadaian Digital (Tring!)", 'V. OSL TRING': "8. Pegadaian Digital (Tring!)",
-        'W. FREX TRING': "8. Pegadaian Digital (Tring!)",
-        'X. DISBURS BRI': "9. Sinergi Holding UMi", 'Y. OSL SINERGI HOLDING': "9. Sinergi Holding UMi",
-        'Z. TE SINERGI HOLDING': "9. Sinergi Holding UMi",
-        'Z1.OSL CICIL EMAS': "10. KPI Stretch Goal (Cicil Emas)" 
-    }
-    return mapping.get(str(kode_kpi).strip(), "Lainnya")
+    kode_kpi_upper = str(kode_kpi).upper().strip()
+    
+    # 1. Outstanding Loan
+    if 'AVG GADAI' in kode_kpi_upper or 'AVG NON GADAI' in kode_kpi_upper or 'AVG EMAS' in kode_kpi_upper or '0SL GROSS' in kode_kpi_upper or 'OSL GROSS' in kode_kpi_upper:
+        return "1. Outstanding Loan"
+    # 2. Laba Usaha
+    elif 'LABA' in kode_kpi_upper:
+        return "2. Laba Usaha"
+    # 3. Efisiensi (CIR)
+    elif 'CIR' in kode_kpi_upper:
+        return "3. Efisiensi (CIR)"
+    # 4. Nasabah
+    elif 'NSBH' in kode_kpi_upper or 'NASABAH' in kode_kpi_upper:
+        if 'TRING' in kode_kpi_upper: return "8. Pegadaian Digital (Tring!)"
+        else: return "4. Nasabah"
+    # 5. Kualitas Kredit
+    elif 'NPL' in kode_kpi_upper or 'LAR' in kode_kpi_upper:
+        return "5. Kualitas Kredit"
+    # 6. Revamp Brand
+    elif 'BRAND AWARENESS' in kode_kpi_upper or 'BRAND' in kode_kpi_upper:
+        return "6. Revamp Brand"
+    # 7. Gold Ecosystem
+    elif 'DEPOSITO EMAS' in kode_kpi_upper or 'TABUNGAN EMAS' in kode_kpi_upper or 'G24' in kode_kpi_upper:
+        if 'HOLDING' in kode_kpi_upper: return "9. Sinergi Holding UMi"
+        else: return "7. Gold Ecosystem"
+    # 8. Pegadaian Digital (Tring!)
+    elif 'TRING' in kode_kpi_upper:
+        return "8. Pegadaian Digital (Tring!)"
+    # 9. Sinergi Holding UMi
+    elif 'HOLDING' in kode_kpi_upper or 'DISBURS BRI' in kode_kpi_upper or 'BRI' in kode_kpi_upper:
+        return "9. Sinergi Holding UMi"
+    # 10. KPI Stretch Goal (Cicil Emas)
+    elif 'CICIL EMAS' in kode_kpi_upper:
+        return "10. KPI Stretch Goal (Cicil Emas)"
+    
+    return "Lainnya"
 
 # ==========================================
-# 3. LOAD DATA (DISESUAIKAN DENGAN HEADER BARU)
+# 3. LOAD DATA 
 # ==========================================
 @st.cache_data(ttl=300)
 def load_data():
@@ -175,8 +193,14 @@ def load_data():
 
 df, tgl_update = load_data()
 
+# Proteksi penanganan error jika drive gagal diakses
+if df is None:
+    st.error(f"❌ Gagal memuat basis data utama dari Cloud Storage! Detail: {tgl_update}")
+    st.button("Coba Muat Ulang Sistem")
+    st.stop()
+
 # ==========================================
-# 4. SESSION & LOGIN (SUDAH DISINKRONKAN KE 'KATEGORI')
+# 4. SESSION & LOGIN
 # ==========================================
 if 'status_login' not in st.session_state: 
     st.session_state.status_login = False
@@ -219,7 +243,7 @@ if not st.session_state.status_login:
             st.rerun()
 
 # ==========================================
-# 5. DASHBOARD UTAMA (SUDAH DISINKRONKAN KE 'KATEGORI')
+# 5. DASHBOARD UTAMA
 # ==========================================
 else:
     st.markdown(f"<p style='text-align: center; color: #888; font-size: 0.8rem; margin-bottom: -10px;'>Terakhir diperbarui: {tgl_update} WIB</p>", unsafe_allow_html=True)
@@ -230,8 +254,10 @@ else:
         st.title("👤 Profil Pengguna")
         st.write(f"**Unit:** {nama}")
         st.write(f"**Tipe:** {kategori}")
-        if st.button("🚪 Logout", width="stretch"):
+        if st.button("🚪 Logout", key="logout_sidebar_btn"):
             st.session_state.status_login = False
+            if 'temp_kode' in st.session_state:
+                del st.session_state.temp_kode
             st.rerun()
         st.divider()
         st.subheader("🤖 AI Assistant KPI")
@@ -245,7 +271,7 @@ else:
         user_input = st.chat_input("Tanya tentang KPI...")
         if user_input:
             st.session_state.chat_history.append({"role": "user", "content": user_input})
-            summary_kpi = f"RINGKASAN KPI {nama}:\n- Score Tananan: {df_user['KPI TAHUNAN'].sum():.2f}"
+            summary_kpi = f"RINGKASAN KPI {nama}:\n- Score Tahunan: {df_user['KPI TAHUNAN'].sum():.2f}"
             response = chat_dengan_ai(user_input, summary_kpi)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.rerun()
@@ -315,8 +341,17 @@ else:
         fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False))
         st.plotly_chart(fig, width="stretch", config={'staticPlot': True})
 
-    ordered_sections = ["1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", "7. Gold Ecosystem", "8. Pegadaian Digital (Tring!)", "9. Sinergi Holding UMi", "10. KPI Stretch Goal (Cicil Emas)"]
-    df_active = df_user[(df_user['BOBOT'] > 0) | (df_user['KODE KPI'].str.contains('CICIL EMAS', case=False))].copy()
+    # Ditambahkan kategori "Lainnya" di urutan paling bawah untuk mengantisipasi data tidak terpetakan
+    ordered_sections = ["1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", "7. Gold Ecosystem", "8. Pegadaian Digital (Tring!)", "9. Sinergi Holding UMi", "10. KPI Stretch Goal (Cicil Emas)", "Lainnya"]
+    
+    # MODIFIKASI ATURAN SARINGAN: Menampilkan data jika BOBOT > 0 ATAU TARGET BULANAN > 0 ATAU TARGET TAHUNAN > 0
+    df_active = df_user[
+        (df_user['BOBOT'] > 0) | 
+        (df_user['TARGET BULANAN'] > 0) | 
+        (df_user['TARGET TAHUNAN'] > 0) | 
+        (df_user['KODE KPI'].str.contains('CICIL EMAS', case=False))
+    ].copy()
+    
     for section in ordered_sections:
         df_sec = df_active[df_active['SECTION_PDF'] == section]
         if not df_sec.empty:
