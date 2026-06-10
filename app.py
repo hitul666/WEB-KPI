@@ -213,7 +213,6 @@ def load_data():
     return df, tgl_str
 
 df, tgl_update = load_data()
-st.write(df[df['KODE KPI'].str.contains('SALDO', case=False, na=False)]['KODE KPI'].unique().tolist())
 
 # Proteksi penanganan error jika drive gagal diakses
 if df is None:
