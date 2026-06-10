@@ -140,22 +140,22 @@ _MAPPING_KEYS_UPPER = {k.upper(): v for k, v in MAPPING_SECTION.items()}
 
 def assign_section(kode_kpi):
     kode_bersih = str(kode_kpi).upper().strip()
-    
+
     # 1. Coba exact match dulu
     if kode_bersih in _MAPPING_KEYS_UPPER:
         return _MAPPING_KEYS_UPPER[kode_bersih]
-    
-    # 2. Fuzzy match sebagai jaring pengaman
+
+    # 2. Fuzzy match sebagai jaring pengaman (tangkap spasi/typo)
     if FUZZY_AVAILABLE:
         hasil = process.extractOne(
-            kode_bersih, 
-            _MAPPING_KEYS_UPPER.keys(), 
+            kode_bersih,
+            _MAPPING_KEYS_UPPER.keys(),
             scorer=fuzz.ratio,
             score_cutoff=80
         )
         if hasil:
             return _MAPPING_KEYS_UPPER[hasil[0]]
-    
+
     return "Lainnya"
 
 # ==========================================
@@ -213,8 +213,6 @@ def load_data():
     return df, tgl_str
 
 df, tgl_update = load_data()
-df, tgl_update = load_data()
-st.write(df['KODE KPI'].unique().tolist())
 
 # Proteksi penanganan error jika drive gagal diakses
 if df is None:
@@ -364,10 +362,8 @@ else:
         fig.update_layout(barmode='overlay', plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False, height=50+(len(df_plot)*65), margin=dict(l=0,r=0,t=20,b=0), xaxis=dict(range=[0, 250], showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False))
         st.plotly_chart(fig, width="stretch", config={'staticPlot': True})
 
-    # Ditambahkan kategori "Lainnya" di urutan paling bawah untuk mengantisipasi data tidak terpetakan
     ordered_sections = ["1. Outstanding Loan", "2. Laba Usaha", "3. Efisiensi (CIR)", "4. Nasabah", "5. Kualitas Kredit", "6. Revamp Brand", "7. Gold Ecosystem", "8. Pegadaian Digital (Tring!)", "9. Sinergi Holding UMi", "10. KPI Stretch Goal (Cicil Emas)", "Lainnya"]
     
-    # MODIFIKASI ATURAN SARINGAN: Menampilkan data jika BOBOT > 0 ATAU TARGET BULANAN > 0 ATAU TARGET TAHUNAN > 0
     df_active = df_user[
         (df_user['BOBOT'] > 0) | 
         (df_user['TARGET BULANAN'] > 0) | 
