@@ -192,6 +192,8 @@ def load_data():
     return df, tgl_str
 
 df, tgl_update = load_data()
+df, tgl_update = load_data()
+st.write(df['KODE KPI'].unique().tolist())
 
 # Proteksi penanganan error jika drive gagal diakses
 if df is None:
