@@ -97,43 +97,64 @@ def _chat_groq(pertanyaan, context_data=""):
         return f"❌ Groq Error: {str(e)}"
 
 # ==========================================
-# 2. LOGIKA MAPPING SECTION (ROBUST KEYWORD MATCHING)
+# 2. LOGIKA MAPPING SECTION (DICTIONARY + FUZZY MATCHING)
 # ==========================================
+try:
+    from rapidfuzz import process, fuzz
+    FUZZY_AVAILABLE = True
+except ImportError:
+    FUZZY_AVAILABLE = False
+
+MAPPING_SECTION = {
+    "A.AVG GADAI"       : "1. Outstanding Loan",
+    "B.AVG NON GADAI"   : "1. Outstanding Loan",
+    "C.AVG EMAS"        : "1. Outstanding Loan",
+    "D.0SL GROSS"       : "1. Outstanding Loan",
+    "E.LABA"            : "2. Laba Usaha",
+    "F. CIR"            : "3. Efisiensi (CIR)",
+    "G. NSBH CIF"       : "4. Nasabah",
+    "H. NSBH AGEN"      : "4. Nasabah",
+    "I. NSBH TAHUNAN"   : "4. Nasabah",
+    "J. NSBH TE"        : "4. Nasabah",
+    "K. NPL GADAI"      : "5. Kualitas Kredit",
+    "L. NPL NON GADAI"  : "5. Kualitas Kredit",
+    "M. NPL EMAS"       : "5. Kualitas Kredit",
+    "N. LAR GADAI"      : "5. Kualitas Kredit",
+    "O. LAR NON GADAI"  : "5. Kualitas Kredit",
+    "P. LAR EMAS"       : "5. Kualitas Kredit",
+    "Q. BRAND AWARENESS": "6. Revamp Brand",
+    "R.DEPOSITO EMAS"   : "7. Gold Ecosystem",
+    "S.SALDO TE"        : "7. Gold Ecosystem",
+    "T. G24"            : "7. Gold Ecosystem",
+    "U. NSBH TRING"     : "8. Pegadaian Digital (Tring!)",
+    "V. OSL TRING"      : "8. Pegadaian Digital (Tring!)",
+    "W. FREX TRING"     : "8. Pegadaian Digital (Tring!)",
+    "X. DISBURS BRI"    : "9. Sinergi Holding UMi",
+    "Y. OSL HOLDING"    : "9. Sinergi Holding UMi",
+    "Z. TE HOLDING"     : "9. Sinergi Holding UMi",
+    "Z1.OSL CICIL EMAS" : "10. KPI Stretch Goal (Cicil Emas)",
+}
+
+# Siapkan keys versi uppercase untuk matching
+_MAPPING_KEYS_UPPER = {k.upper(): v for k, v in MAPPING_SECTION.items()}
+
 def assign_section(kode_kpi):
-    kode_kpi_upper = str(kode_kpi).upper().strip()
+    kode_bersih = str(kode_kpi).upper().strip()
     
-    # 1. Outstanding Loan
-    if 'AVG GADAI' in kode_kpi_upper or 'AVG NON GADAI' in kode_kpi_upper or 'AVG EMAS' in kode_kpi_upper or '0SL GROSS' in kode_kpi_upper or 'OSL GROSS' in kode_kpi_upper:
-        return "1. Outstanding Loan"
-    # 2. Laba Usaha
-    elif 'LABA' in kode_kpi_upper:
-        return "2. Laba Usaha"
-    # 3. Efisiensi (CIR)
-    elif 'CIR' in kode_kpi_upper:
-        return "3. Efisiensi (CIR)"
-    # 4. Nasabah
-    elif 'NSBH' in kode_kpi_upper or 'NASABAH' in kode_kpi_upper:
-        if 'TRING' in kode_kpi_upper: return "8. Pegadaian Digital (Tring!)"
-        else: return "4. Nasabah"
-    # 5. Kualitas Kredit
-    elif 'NPL' in kode_kpi_upper or 'LAR' in kode_kpi_upper:
-        return "5. Kualitas Kredit"
-    # 6. Revamp Brand
-    elif 'BRAND AWARENESS' in kode_kpi_upper or 'BRAND' in kode_kpi_upper:
-        return "6. Revamp Brand"
-    # 7. Gold Ecosystem
-    elif 'DEPOSITO EMAS' in kode_kpi_upper or 'TABUNGAN EMAS' in kode_kpi_upper or 'G24' in kode_kpi_upper:
-        if 'HOLDING' in kode_kpi_upper: return "9. Sinergi Holding UMi"
-        else: return "7. Gold Ecosystem"
-    # 8. Pegadaian Digital (Tring!)
-    elif 'TRING' in kode_kpi_upper:
-        return "8. Pegadaian Digital (Tring!)"
-    # 9. Sinergi Holding UMi
-    elif 'HOLDING' in kode_kpi_upper or 'DISBURS BRI' in kode_kpi_upper or 'BRI' in kode_kpi_upper:
-        return "9. Sinergi Holding UMi"
-    # 10. KPI Stretch Goal (Cicil Emas)
-    elif 'CICIL EMAS' in kode_kpi_upper:
-        return "10. KPI Stretch Goal (Cicil Emas)"
+    # 1. Coba exact match dulu
+    if kode_bersih in _MAPPING_KEYS_UPPER:
+        return _MAPPING_KEYS_UPPER[kode_bersih]
+    
+    # 2. Fuzzy match sebagai jaring pengaman
+    if FUZZY_AVAILABLE:
+        hasil = process.extractOne(
+            kode_bersih, 
+            _MAPPING_KEYS_UPPER.keys(), 
+            scorer=fuzz.ratio,
+            score_cutoff=80
+        )
+        if hasil:
+            return _MAPPING_KEYS_UPPER[hasil[0]]
     
     return "Lainnya"
 
